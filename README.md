@@ -47,15 +47,15 @@ A powerful, easy-to-use YouTube downloader for Android using Termux. Share any Y
 
 1. **Open Termux** and run:
 ```bash
-curl -sL https://raw.githubusercontent.com/YOUR_USERNAME/termux-youtube/main/termux_v2.sh | bash
+curl -sL https://raw.githubusercontent.com/ibhar-tech/mp4-and-mp3-downloader/main/termux_v2.sh | bash
 ```
 
 Or manually:
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/termux-youtube.git
-cd termux-youtube
+git clone https://github.com/ibhar-tech/mp4-and-mp3-downloader.git
+cd mp4-and-mp3-downloader
 
 # Run the setup script
 bash termux_v2.sh
