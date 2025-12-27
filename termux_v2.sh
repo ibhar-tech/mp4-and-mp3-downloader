@@ -1,168 +1,451 @@
-# 📺 YouTube Downloader for Termux
+#!/data/data/com.termux/files/usr/bin/bash
 
-A powerful, easy-to-use YouTube downloader for Android using Termux. Share any YouTube video or playlist directly to Termux to download high-quality videos or MP3 audio.
+# YouTube Downloader Setup Script v2
+# Using yt-dlp with PLAYLIST support
+# Handles: hidden videos, private videos, errors, rate limiting, etc.
 
-![Platform](https://img.shields.io/badge/Platform-Android%20(Termux)-green)
-![Tool](https://img.shields.io/badge/Tool-yt--dlp-red)
-![License](https://img.shields.io/badge/License-MIT-blue)
+set -e  # Exit on error
 
-## ✨ Features
+# Color codes for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-| Feature | Description |
-|---------|-------------|
-| 🎬 **Video Download** | High quality MP4 with original audio (not dubbed) |
-| 🎵 **Audio Download** | MP3 format with original language audio |
-| 📋 **Playlist Support** | Download entire playlists with one click |
-| 🌍 **Original Audio** | Automatically selects original language, not AI-dubbed |
-| ⚡ **Smart Skipping** | Automatically skips private/deleted/unavailable videos |
-| 🔄 **Auto-Retry** | Retries failed downloads up to 10 times |
-| 📁 **Organized** | Playlists saved in their own folders |
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
 
-## 📱 Screenshots
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
 
-```
-┌─────────────────────────────────────────┐
-│  📋 PLAYLIST DETECTED                    │
-│    Title: My Favorite Songs              │
-│    Videos: 25                            │
-│                                          │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
-│        DOWNLOAD OPTIONS                  │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
-│                                          │
-│  1) 🎬 Video (High Quality MP4)          │
-│  2) 🎵 Audio Only (MP3)                  │
-│                                          │
-│  Choose [1/2] (default: 1): _            │
-└─────────────────────────────────────────┘
-```
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
-## 🚀 Installation
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
-### Prerequisites
-- Android phone with [Termux](https://f-droid.org/en/packages/com.termux/) installed (from F-Droid, NOT Play Store)
-- Storage permission granted to Termux
+# Update packages
+log_info "Updating system packages..."
+pkg update -y && pkg upgrade -y
 
-### Quick Install
+# Install required packages
+log_info "Installing required packages..."
 
-1. **Open Termux** and run:
-```bash
-curl -sL https://raw.githubusercontent.com/YOUR_USERNAME/termux-youtube/main/termux_v2.sh | bash
-```
+# Install python and pip first (required for yt-dlp)
+if ! command -v python >/dev/null 2>&1; then
+    log_info "Installing python..."
+    pkg install python -y
+    log_success "python installed"
+else
+    log_success "python already installed"
+fi
 
-Or manually:
+# Install yt-dlp via pip (more up-to-date than pkg version)
+if ! command -v yt-dlp >/dev/null 2>&1; then
+    log_info "Installing yt-dlp..."
+    pip install -U yt-dlp
+    log_success "yt-dlp installed"
+else
+    log_info "Updating yt-dlp..."
+    pip install -U yt-dlp
+    log_success "yt-dlp updated"
+fi
 
-```bash
-# Clone the repo
-git clone https://github.com/YOUR_USERNAME/termux-youtube.git
-cd termux-youtube
+# Install ffmpeg
+if ! command -v ffmpeg >/dev/null 2>&1; then
+    log_info "Installing ffmpeg..."
+    pkg install ffmpeg -y
+    log_success "ffmpeg installed"
+else
+    log_success "ffmpeg already installed"
+fi
 
-# Run the setup script
-bash termux_v2.sh
-```
+# Setup storage
+if [ ! -d "$HOME/storage/shared" ]; then
+    log_info "Setting up storage access..."
+    termux-setup-storage
+    sleep 2
+fi
 
-2. **Grant storage permission** when prompted
+# Create directories
+YT_DIR="$HOME/storage/shared/Youtube"
+BIN_DIR="$HOME/bin"
+mkdir -p "$YT_DIR" "$BIN_DIR"
+log_success "Directories created: $YT_DIR, $BIN_DIR"
 
-3. **Done!** Share any YouTube link to Termux to start downloading
+# Create the URL opener script
+log_info "Creating termux-url-opener script (v2 with playlist support)..."
+cat > "$BIN_DIR/termux-url-opener" << 'EOF'
+#!/data/data/com.termux/files/usr/bin/bash
 
-## 📖 Usage
+# ============================================
+# YouTube Downloader v2 - With Playlist Support
+# ============================================
+# Features:
+# - Single video and playlist downloads
+# - Original audio selection (not dubbed)
+# - Handles hidden/private/deleted videos
+# - Rate limiting protection
+# - Detailed progress and error reporting
 
-### Download a Single Video
-1. Open YouTube app
-2. Share any video → Select "Termux"
-3. Choose: `1` for Video or `2` for Audio
-4. Wait for download to complete
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+WHITE='\033[1;37m'
+NC='\033[0m'
 
-### Download a Playlist
-1. Open a YouTube playlist
-2. Share the playlist link → Select "Termux"
-3. Choose: `1` for Video or `2` for Audio
-4. All available videos will be downloaded
+log() {
+    echo -e "${BLUE}[$(date '+%H:%M:%S')]${NC} $1"
+}
 
-### File Locations
-```
-/storage/emulated/0/Youtube/
-├── Single_Video.mp4
-├── Another_Video.mp4
-├── PlaylistName/
-│   ├── 001 - First_Video.mp4
-│   ├── 002 - Second_Video.mp4
-│   └── 003 - Third_Video.mp4
-└── .download.log
-```
+error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
 
-## 🛡️ Edge Cases Handled
+success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
 
-| Issue | How It's Handled |
-|-------|------------------|
-| Private videos | Skipped automatically |
-| Deleted videos | Skipped automatically |
-| Hidden videos | Skipped automatically |
-| Age-restricted | Skipped with warning |
-| Geo-blocked | Skipped with warning |
-| Network errors | Auto-retry (10 attempts) |
-| Rate limiting | Auto-delay between downloads |
+warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
-## 🔧 Configuration
+highlight() {
+    echo -e "${CYAN}$1${NC}"
+}
 
-Downloads are saved to: `/storage/emulated/0/Youtube/`
+URL="$1"
+OUT_DIR="$HOME/storage/shared/Youtube"
+LOG_FILE="$OUT_DIR/.download.log"
+ERROR_LOG="$OUT_DIR/.errors.log"
 
-To change the download location, edit the `OUT_DIR` variable in `~/bin/termux-url-opener`:
-```bash
-nano ~/bin/termux-url-opener
-# Change: OUT_DIR="$HOME/storage/shared/Youtube"
-```
+# Validate URL
+if [[ -z "$URL" ]]; then
+    error "No URL provided"
+    exit 1
+fi
 
-## 📋 Files
+# Check if URL is a YouTube link
+if [[ ! "$URL" =~ (youtube\.com|youtu\.be) ]]; then
+    error "Not a YouTube URL: $URL"
+    exit 1
+fi
 
-| File | Description |
-|------|-------------|
-| `termux.sh` | Basic version - single video support |
-| `termux_v2.sh` | Full version - playlist + edge case handling |
+# Ensure directories exist
+mkdir -p "$OUT_DIR"
 
-## 🔄 Updating
+# Log start
+{
+    echo "======================================"
+    echo "Download started: $(date)"
+    echo "URL: $URL"
+} >> "$LOG_FILE"
 
-To update yt-dlp (recommended periodically):
-```bash
-pip install -U yt-dlp
-```
+# ============================================
+# DETECT URL TYPE (Single Video vs Playlist)
+# ============================================
+highlight "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log "Analyzing URL..."
 
-To reinstall the script:
-```bash
-bash termux_v2.sh
-```
+IS_PLAYLIST=0
+PLAYLIST_COUNT=0
+VIDEO_TITLE=""
 
-## ❓ Troubleshooting
+# Check if it's a playlist
+if [[ "$URL" =~ list= ]]; then
+    # Get playlist info
+    PLAYLIST_INFO=$(yt-dlp --flat-playlist --dump-json "$URL" 2>/dev/null | head -1)
+    
+    if [[ -n "$PLAYLIST_INFO" ]]; then
+        IS_PLAYLIST=1
+        # Count videos in playlist (including unavailable ones)
+        PLAYLIST_COUNT=$(yt-dlp --flat-playlist --print "%(id)s" "$URL" 2>/dev/null | wc -l)
+        PLAYLIST_TITLE=$(echo "$PLAYLIST_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('playlist_title', d.get('title', 'Unknown Playlist')))" 2>/dev/null || echo "Unknown Playlist")
+        
+        echo -e "${MAGENTA}📋 PLAYLIST DETECTED${NC}"
+        echo "  Title: $PLAYLIST_TITLE"
+        echo "  Videos: $PLAYLIST_COUNT"
+    fi
+else
+    # Single video
+    VIDEO_TITLE=$(yt-dlp --get-title "$URL" 2>/dev/null || echo "Unknown")
+    echo -e "${CYAN}🎬 SINGLE VIDEO${NC}"
+    echo "  Title: $VIDEO_TITLE"
+fi
 
-### "Permission denied" when saving files
-```bash
-termux-setup-storage
-```
+highlight "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
 
-### "yt-dlp: command not found"
-```bash
-pip install -U yt-dlp
-```
+# ============================================
+# CHECK DISK SPACE
+# ============================================
+AVAILABLE_SPACE=$(df -h "$OUT_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || echo "Unknown")
+log "Available disk space: $AVAILABLE_SPACE"
 
-### Videos not downloading
-Make sure you're using the latest yt-dlp:
-```bash
-pip install -U yt-dlp
-```
+# ============================================
+# ASK USER: DOWNLOAD MODE
+# ============================================
+highlight "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${MAGENTA}        DOWNLOAD OPTIONS${NC}"
+highlight "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "  1) 🎬 Video (High Quality MP4 with Original Audio)"
+echo "  2) 🎵 Audio Only (MP3 - Original Language)"
+echo ""
 
-### Arabic/non-Latin titles showing as underscores
-This was fixed in v2. Make sure you're running the latest `termux_v2.sh`.
+if [[ $IS_PLAYLIST -eq 1 ]]; then
+    echo -e "  ${YELLOW}Note: Downloading playlist with $PLAYLIST_COUNT videos${NC}"
+    echo -e "  ${YELLOW}Hidden/private videos will be skipped automatically${NC}"
+    echo ""
+fi
 
-## 🙏 Credits
+echo -n "Choose [1/2] (default: 1): "
+read -t 30 CHOICE || CHOICE="1"
+echo ""
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - The powerful download engine
-- [Termux](https://termux.dev/) - Android terminal emulator
-- [FFmpeg](https://ffmpeg.org/) - Audio/video processing
+case "$CHOICE" in
+    2|audio|Audio|AUDIO|mp3|MP3)
+        DOWNLOAD_MODE="audio"
+        log "Mode: ${MAGENTA}AUDIO ONLY (MP3 - Original)${NC}"
+        ;;
+    *)
+        DOWNLOAD_MODE="video"
+        log "Mode: ${CYAN}HIGH QUALITY VIDEO (Original Audio)${NC}"
+        ;;
+esac
 
-## 📄 License
+highlight "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
 
-MIT License - feel free to use, modify, and distribute.
+# ============================================
+# COMMON YT-DLP OPTIONS
+# ============================================
+# These options handle various edge cases:
+# --ignore-errors          : Skip unavailable videos (private, deleted, etc.)
+# --no-abort-on-error      : Continue even if some videos fail
+# --retries 10             : Retry failed downloads up to 10 times
+# --fragment-retries 10    : Retry failed fragments
+# --sleep-interval 1       : Wait 1-3 seconds between downloads (rate limiting)
+# --max-sleep-interval 3   : Maximum wait time
+# --socket-timeout 30      : Timeout for network operations
 
----
+COMMON_OPTS=(
+    --ignore-errors
+    --no-abort-on-error
+    --retries 10
+    --fragment-retries 10
+    --sleep-interval 1
+    --max-sleep-interval 3
+    --socket-timeout 30
+    --add-metadata
+    --embed-thumbnail
+    --progress
+    --newline
+)
 
-**Made with ❤️ for easy YouTube downloads on Android**
+# Add playlist-specific options
+if [[ $IS_PLAYLIST -eq 1 ]]; then
+    COMMON_OPTS+=(
+        --yes-playlist
+        -o "$OUT_DIR/%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s"
+    )
+else
+    COMMON_OPTS+=(
+        --no-playlist
+        -o "$OUT_DIR/%(title)s.%(ext)s"
+    )
+fi
+
+# ============================================
+# DOWNLOAD FUNCTION
+# ============================================
+download_content() {
+    local format_opts=("$@")
+    local start_time=$(date +%s)
+    local temp_error_log=$(mktemp)
+    
+    log "Starting download..."
+    if [[ $IS_PLAYLIST -eq 1 ]]; then
+        echo -e "${YELLOW}Downloading playlist: $PLAYLIST_TITLE${NC}"
+        echo -e "${YELLOW}Progress will be shown for each video${NC}"
+    fi
+    echo ""
+    
+    # Run yt-dlp and capture output
+    yt-dlp "${COMMON_OPTS[@]}" "${format_opts[@]}" "$URL" 2>&1 | tee "$temp_error_log"
+    
+    local result=${PIPESTATUS[0]}
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    
+    # Parse results
+    local downloaded=0
+    local skipped=0
+    local errors=0
+    
+    if [[ -f "$temp_error_log" ]]; then
+        # Count occurrences safely (grep returns 1 if no match, so we handle it)
+        downloaded=$(grep -c "has already been recorded" "$temp_error_log" 2>/dev/null) || downloaded=0
+        count=$(grep -c "\[download\] 100%" "$temp_error_log" 2>/dev/null) || count=0
+        downloaded=$((downloaded + count))
+        
+        skipped=$(grep -c "is not available" "$temp_error_log" 2>/dev/null) || skipped=0
+        count=$(grep -c "Private video" "$temp_error_log" 2>/dev/null) || count=0
+        skipped=$((skipped + count))
+        count=$(grep -c "Video unavailable" "$temp_error_log" 2>/dev/null) || count=0
+        skipped=$((skipped + count))
+        count=$(grep -c "Sign in to confirm" "$temp_error_log" 2>/dev/null) || count=0
+        skipped=$((skipped + count))
+        
+        errors=$(grep -c "ERROR:" "$temp_error_log" 2>/dev/null) || errors=0
+        
+        # Save errors to error log
+        grep "ERROR:" "$temp_error_log" >> "$ERROR_LOG" 2>/dev/null || true
+    fi
+    
+    rm -f "$temp_error_log"
+    
+    # Generate report
+    echo ""
+    highlight "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    if [[ $result -eq 0 ]] || [[ $downloaded -gt 0 ]]; then
+        success "DOWNLOAD COMPLETE"
+    else
+        error "DOWNLOAD FAILED"
+    fi
+    
+    highlight "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    if [[ $IS_PLAYLIST -eq 1 ]]; then
+        echo "  Playlist: $PLAYLIST_TITLE"
+        echo "  Total videos: $PLAYLIST_COUNT"
+    else
+        echo "  Title: $VIDEO_TITLE"
+    fi
+    
+    echo "  Mode: $DOWNLOAD_MODE"
+    echo "  Duration: ${duration}s"
+    echo "  Location: $OUT_DIR"
+    
+    if [[ $IS_PLAYLIST -eq 1 ]]; then
+        echo ""
+        echo -e "  ${GREEN}✓ Downloaded: ~$downloaded${NC}"
+        if [[ $skipped -gt 0 ]]; then
+            echo -e "  ${YELLOW}⚠ Skipped (unavailable): ~$skipped${NC}"
+        fi
+        if [[ $errors -gt 0 ]]; then
+            echo -e "  ${RED}✗ Errors: ~$errors${NC}"
+            echo -e "  ${RED}  (see $ERROR_LOG for details)${NC}"
+        fi
+    fi
+    
+    highlight "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    # Save report
+    {
+        echo "Download Report - $(date)"
+        echo "URL: $URL"
+        echo "Mode: $DOWNLOAD_MODE"
+        echo "Duration: ${duration}s"
+        if [[ $IS_PLAYLIST -eq 1 ]]; then
+            echo "Playlist: $PLAYLIST_TITLE"
+            echo "Total: $PLAYLIST_COUNT"
+            echo "Skipped: ~$skipped"
+        fi
+        echo "Result: $([ $result -eq 0 ] && echo 'SUCCESS' || echo 'PARTIAL/FAILED')"
+    } > "$REPORT_FILE"
+    
+    # Log completion
+    echo "Download completed: $(date), Duration: ${duration}s, Mode: $DOWNLOAD_MODE" >> "$LOG_FILE"
+    
+    return $result
+}
+
+# ============================================
+# AUDIO DOWNLOAD MODE
+# ============================================
+if [[ "$DOWNLOAD_MODE" == "audio" ]]; then
+    log "Downloading original audio and converting to MP3..."
+    echo ""
+    
+    # Audio format options
+    # ba[format_note*=original] - prioritize original audio
+    # Falls back to ba (best audio) if no original found
+    AUDIO_OPTS=(
+        -f "ba[format_note*=original]/ba"
+        --extract-audio
+        --audio-format mp3
+        --audio-quality 0
+    )
+    
+    download_content "${AUDIO_OPTS[@]}"
+    exit $?
+fi
+
+# ============================================
+# VIDEO DOWNLOAD MODE
+# ============================================
+log "Downloading high quality video with original audio..."
+echo ""
+
+# Video format options
+# bv*[ext=mp4]+ba[format_note*=original] - best mp4 video + original audio
+# Falls back through various options to ensure something downloads
+VIDEO_OPTS=(
+    -f "bv*[ext=mp4]+ba[format_note*=original]/bv*[ext=mp4]+ba/bv*+ba[format_note*=original]/bv*+ba/best"
+    --merge-output-format mp4
+)
+
+download_content "${VIDEO_OPTS[@]}"
+exit $?
+EOF
+
+chmod +x "$BIN_DIR/termux-url-opener"
+log_success "termux-url-opener script (v2) created and made executable"
+
+# Verify installation
+log_info "Verifying installation..."
+if [[ -x "$BIN_DIR/termux-url-opener" ]]; then
+    YT_DLP_VERSION=$(yt-dlp --version 2>/dev/null || echo "unknown")
+    log_success "Installation complete!"
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  YouTube Downloader v2 Setup Complete!${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "✓ Tool: ${BLUE}yt-dlp v$YT_DLP_VERSION${NC}"
+    echo -e "✓ Downloads: ${BLUE}$YT_DIR${NC}"
+    echo ""
+    echo -e "${WHITE}Features:${NC}"
+    echo -e "  ${CYAN}📹 Video${NC}: High quality MP4 with Original Audio"
+    echo -e "  ${MAGENTA}🎵 Audio${NC}: MP3 format (Original Language)"
+    echo -e "  ${GREEN}📋 Playlist${NC}: Full playlist support"
+    echo -e "  ${YELLOW}⚡ Smart${NC}: Skips unavailable videos automatically"
+    echo ""
+    echo -e "${WHITE}Edge Cases Handled:${NC}"
+    echo -e "  - Private/Hidden videos → Skipped"
+    echo -e "  - Deleted videos → Skipped"
+    echo -e "  - Age-restricted → Skipped with warning"
+    echo -e "  - Network errors → Auto-retry (10x)"
+    echo -e "  - Rate limiting → Auto-delay between downloads"
+    echo ""
+    echo -e "✓ Logs: ${BLUE}$YT_DIR/.download.log${NC}"
+    echo -e "✓ Errors: ${BLUE}$YT_DIR/.errors.log${NC}"
+    echo ""
+    echo -e "${CYAN}Share any YouTube video or playlist to download!${NC}"
+    echo ""
+else
+    log_error "Installation verification failed"
+    exit 1
+fi
